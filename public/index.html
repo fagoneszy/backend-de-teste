@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Frontend Clean Arch - Validação Avançada</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:920px;margin:40px auto;padding:0 20px}
+section{border:1px solid #ddd;padding:18px;margin-bottom:22px;border-radius:10px;background:#fafafa}
+input,textarea{width:100%;padding:10px;margin:6px 0;box-sizing:border-box;border:1px solid #ccc;border-radius:6px}
+button{padding:10px 18px;cursor:pointer;border-radius:6px;border:1px solid #999;background:#fff}
+button:hover{background:#f0f0f0}
+pre{background:#111;color:#eee;padding:10px;overflow:auto;white-space:pre-wrap;border-radius:6px}
+.error{color:#b00000;font-size:0.88em;margin-top:-4px;margin-bottom:6px}
+.success{color:#006400}
+label{font-weight:600;display:block;margin-top:8px}
+.meter{height:6px;background:#eee;border-radius:3px;overflow:hidden;margin-top:4px}
+.meter > div{height:100%;width:0%;transition:width .3s}
+.helper{font-size:0.85em;color:#555}
+</style>
+</head>
+<body>
+<h1>Backend Clean Architecture - Frontend Aprimorado</h1>
+
+<section>
+<h2>Registro</h2>
+<label>Nome completo</label>
+<input id="regName" placeholder="Ex: Ana Souza">
+<div id="errName" class="error"></div>
+
+<label>Email</label>
+<input id="regEmail" placeholder="voce@gmail.com" autocomplete="email">
+<div class="helper">Dica: use Gmail para melhor experiência</div>
+<div id="errEmail" class="error"></div>
+
+<label>Senha</label>
+<input id="regPassword" placeholder="Mínimo 10 caracteres" type="password">
+<div class="meter"><div id="passMeter"></div></div>
+<div class="helper">Maiúscula + minúscula + número + símbolo</div>
+<div id="errPass" class="error"></div>
+
+<label>CPF <small>opcional</small></label>
+<input id="regCpf" placeholder="000.000.000-00" maxlength="14">
+<div class="helper">Aceita com ou sem máscara</div>
+<div id="errCpf" class="error"></div>
+
+<button onclick="register()">Registrar</button>
+<pre id="regOut"></pre>
+</section>
+
+<section>
+<h2>Login</h2>
+<input id="loginEmail" placeholder="Email" autocomplete="email">
+<input id="loginPassword" placeholder="Senha" type="password">
+<button onclick="login()">Login</button>
+<pre id="loginOut"></pre>
+</section>
+
+<section>
+<h2>Enviar Dados</h2>
+<textarea id="dataInput" rows="6" placeholder='{"nome":"...", "valor":123}'></textarea>
+<div id="errData" class="error"></div>
+<button onclick="sendData()">Enviar</button>
+<pre id="dataOut"></pre>
+</section>
+
+<section>
+<h2>Meus Dados</h2>
+<button onclick="getOwn()">Buscar meus dados</button>
+<pre id="ownOut"></pre>
+</section>
+
+<script>
+let token = '';
+let userId = '';
+
+const $ = id => document.getElementById(id);
+
+function isValidCPF(cpf){
+  const clean = cpf.replace(/\D/g,'');
+  if(clean.length!==11 || /^(\d)\1{10}$/.test(clean)) return false;
+  let sum=0;
+  for(let i=0;i<9;i++) sum+=parseInt(clean[i])*(10-i);
+  let rev=11-(sum%11); if(rev>=10) rev=0;
+  if(rev!==parseInt(clean[9])) return false;
+  sum=0; for(let i=0;i<10;i++) sum+=parseInt(clean[i])*(11-i);
+  rev=11-(sum%11); if(rev>=10) rev=0;
+  return rev===parseInt(clean[10]);
+}
+
+function passwordScore(p){
+  let s=0;
+  if(p.length>=10) s+=25;
+  if(/[a-z]/.test(p)) s+=25;
+  if(/[A-Z]/.test(p)) s+=25;
+  if(/\d/.test(p)) s+=12;
+  if(/[^A-Za-z0-9]/.test(p)) s+=13;
+  return Math.min(s,100);
+}
+
+const validators = {
+  name: v => /^[A-Za-zÀ-ÿ\s'-]{3,100}$/.test(v) ? '' : 'Nome inválido: 3-100 letras',
+  email: v => {
+    const basic=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    if(!basic) return 'Email inválido';
+    if(/(tempmail|disposable|10minutemail)/i.test(v)) return 'Email descartável não permitido';
+    return '';
+  },
+  password: v => {
+    const ok = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{10,}$/.test(v);
+    return ok ? '' : 'Senha fraca: 10+ caracteres com maiúscula, minúscula, número e símbolo';
+  },
+  cpf: v => {
+    if(!v) return '';
+    const clean = v.replace(/\D/g,'');
+    if(clean.length!==11) return 'CPF deve ter 11 dígitos';
+    return isValidCPF(v) ? '' : 'CPF inválido';
+  },
+  json: v => { try { JSON.parse(v); return '';} catch { return 'JSON inválido'; } }
+};
+
+function clearErrors(){
+  ['errName','errEmail','errPass','errCpf','errData'].forEach(id=>$(id).textContent='');
+}
+
+// CPF mask
+$('#regCpf').addEventListener('input', e=>{
+  let v = e.target.value.replace(/\D/g,'').slice(0,11);
+  if(v.length>9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4');
+  else if(v.length>6) v = v.replace(/(\d{3})(\d{3})(\d{3})/,'$1.$2.$3');
+  else if(v.length>3) v = v.replace(/(\d{3})(\d{3})/,'$1.$2');
+  e.target.value = v;
+});
+
+// Password meter
+$('#regPassword').addEventListener('input', e=>{
+  const score = passwordScore(e.target.value);
+  const meter = $('#passMeter');
+  meter.style.width = score+'%';
+  meter.style.background = score<50?'#e53935':score<80?'#fb8c00':'#43a047';
+});
+
+async function register(){
+  clearErrors();
+  const name = $('#regName').value.trim();
+  const email = $('#regEmail').value.trim();
+  const password = $('#regPassword').value;
+  const cpf = $('#regCpf').value.trim();
+  let ok=true;
+  const checks = [
+    ['errName', validators.name(name)],
+    ['errEmail', validators.email(email)],
+    ['errPass', validators.password(password)],
+    ['errCpf', validators.cpf(cpf)]
+  ];
+  for(const [id,msg] of checks){ if(msg){ $(id).textContent=msg; ok=false; } }
+  if(!ok) return;
+  const res = await fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,email,password,cpf})});
+  $('#regOut').textContent = await res.text();
+}
+
+async function login(){
+  const body={email:$('#loginEmail').value.trim(), password:$('#loginPassword').value};
+  const res = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data = await res.json().catch(async()=>({error:await res.text()}));
+  $('#loginOut').textContent = JSON.stringify(data,null,2);
+  if(data.token){ token=data.token; userId=data.userId; }
+}
+
+async function sendData(){
+  const rawStr=$('#dataInput').value;
+  const err=validators.json(rawStr);
+  if(err){ $('#errData').textContent=err; return; }
+  const res = await fetch('/api/data/process',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify(JSON.parse(rawStr))});
+  $('#dataOut').textContent = await res.text();
+}
+
+async function getOwn(){
+  if(!userId){ alert('Faça login primeiro'); return; }
+  const res = await fetch('/api/data/user/'+userId,{headers:{'Authorization':'Bearer '+token}});
+  $('#ownOut').textContent = await res.text();
+}
+</script>
+</body>
+</html>
